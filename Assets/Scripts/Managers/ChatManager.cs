@@ -2,14 +2,18 @@ using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 
+// Script que gestiona el chat en tiempo real del lobby.
+// Cuando un jugador envia un mensaje, este viaja al servidor y el servidor
+// lo retransmite a todos los clientes conectados.
+
 public class ChatManager : NetworkBehaviour
 {
     public TMP_InputField messageToSend_input;
     public TMP_Text chatlog;
 
-    [Header("Feedback de límite")]
-    public string characterLimitMessage = "¡Límite de caracteres alcanzado!";
-    public string lineLimitMessage = "¡Máximo de 3 líneas de chat alcanzado!";
+    [Header("Feedback de limite")]
+    public string characterLimitMessage = "Limite de caracteres alcanzado!";
+    public string lineLimitMessage = "Maximo de 3 lineas de chat alcanzado!";
 
     private void Start()
     {
@@ -35,12 +39,16 @@ public class ChatManager : NetworkBehaviour
         if (string.IsNullOrEmpty(message)) return;
 
         string playerName = OnlinePlayersManager.Singleton.playerName;
+
+        // Enviamos el mensaje al servidor para que lo retransmita a todos
         SendMessageServerRpc(message, playerName);
 
         messageToSend_input.text = "";
         messageToSend_input.ActivateInputField();
     }
 
+    // Se ejecuta cada vez que el jugador escribe algo en el input
+    // Si llega al limite de caracteres o de lineas, muestra un aviso en pantalla
     private void OnMessageValueChanged(string currentText)
     {
         if (ConnectionCallbackManager.Singleton == null) return;
@@ -60,7 +68,6 @@ public class ChatManager : NetworkBehaviour
         {
             int lineCount = currentText.Split('\n').Length;
             if (currentText.EndsWith("\n")) lineCount++;
-
             if (lineCount >= messageToSend_input.lineLimit && currentText.Length > 0)
             {
                 atLimit = true;
@@ -74,6 +81,8 @@ public class ChatManager : NetworkBehaviour
         }
     }
 
+    // El cliente llama a este RPC para que el servidor procese y retransmita el mensaje
+    // RequireOwnership = false permite que cualquier cliente lo llame, no solo el dueno del objeto
     [ServerRpc(RequireOwnership = false)]
     private void SendMessageServerRpc(string message, string playerName)
     {
@@ -81,12 +90,11 @@ public class ChatManager : NetworkBehaviour
         SendMessageClientRpc(message, playerName, isHostSender);
     }
 
+    // El servidor llama a este RPC en todos los clientes para mostrar el mensaje en sus pantallas
     [ClientRpc]
     private void SendMessageClientRpc(string message, string playerName, bool isHostSender)
     {
-        // Mostramos el mensaje en pantalla en tiempo real
         ShowMessageLocally(playerName, message, isHostSender);
-        // Guardamos en el historial local de este cliente
         ChatHistoryManager.Instance?.AddMessageToHistory(playerName, message, isHostSender);
     }
 
@@ -95,6 +103,7 @@ public class ChatManager : NetworkBehaviour
         if (chatlog == null) return;
 
         string time = System.DateTime.Now.ToString("HH:mm");
+        // El nombre del host se muestra en amarillo, el de los clientes en blanco
         string color = isHostSender ? "yellow" : "white";
         string formatted = $"[{time}] <color={color}>{playerName}</color>: {message}";
 
@@ -108,8 +117,7 @@ public class ChatManager : NetworkBehaviour
 
     public void DisconnectGame()
     {
-        // Guardamos el historial pero NO lo borramos,
-        // así al reconectar se puede recuperar
+        // Guardamos el historial pero NO lo borramos para poder recuperarlo al reconectar
         ChatHistoryManager.Instance?.SaveAndLeaveRoom();
         NetworkManager.Singleton.Shutdown();
     }

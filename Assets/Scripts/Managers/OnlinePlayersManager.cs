@@ -1,6 +1,10 @@
 using System;
 using UnityEngine;
 
+// Script que guarda el nombre del jugador local y lo mantiene disponible
+// para todos los demas scripts durante toda la ejecucion del juego.
+
+// Estructura de datos preparada para vincular nombre e ID de red si se necesita en el futuro
 [Serializable]
 public class OnlineUserData
 {
@@ -13,7 +17,7 @@ public class OnlinePlayersManager : MonoBehaviour
     private static OnlinePlayersManager singleton;
     public static OnlinePlayersManager Singleton => singleton;
 
-    public string playerName;  // Nombre actual en uso
+    public string playerName;
 
     private void Awake()
     {
@@ -22,16 +26,9 @@ public class OnlinePlayersManager : MonoBehaviour
             singleton = this;
             DontDestroyOnLoad(gameObject);
 
+            // Recuperamos el nombre guardado en sesiones anteriores para no pedirlo cada vez
             string savedName = PlayerPrefs.GetString("PlayerName", "");
-
-            if (!string.IsNullOrEmpty(savedName))
-            {
-                playerName = savedName;
-            }
-            else
-            {
-                playerName = "";
-            }
+            playerName = !string.IsNullOrEmpty(savedName) ? savedName : "";
         }
         else
         {
@@ -39,10 +36,10 @@ public class OnlinePlayersManager : MonoBehaviour
         }
     }
 
+    // Punto unico para cambiar el nombre: actualiza la variable y lo guarda en disco
     public void SetPlayerName(string newName)
     {
         if (string.IsNullOrEmpty(newName)) return;
-
         playerName = newName;
         PlayerPrefs.SetString("PlayerName", newName);
         PlayerPrefs.Save();

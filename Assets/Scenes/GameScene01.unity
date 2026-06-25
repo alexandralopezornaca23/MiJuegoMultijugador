@@ -1012,6 +1012,10 @@ PrefabInstance:
       value: FinalLevels123
       objectReference: {fileID: 0}
     - target: {fileID: 2066883759825818030, guid: 4089ba9629219fb448361b2c6fdea1ad, type: 3}
+      propertyPath: minimumPlayersToWin
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2066883759825818030, guid: 4089ba9629219fb448361b2c6fdea1ad, type: 3}
       propertyPath: totalPlayersPerTeam
       value: 1
       objectReference: {fileID: 0}
@@ -9614,6 +9618,10 @@ PrefabInstance:
     - target: {fileID: 2066883759825818030, guid: 4089ba9629219fb448361b2c6fdea1ad, type: 3}
       propertyPath: newSceneToLoad
       value: FinalLevels123
+      objectReference: {fileID: 0}
+    - target: {fileID: 2066883759825818030, guid: 4089ba9629219fb448361b2c6fdea1ad, type: 3}
+      propertyPath: minimumPlayersToWin
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 2066883759825818030, guid: 4089ba9629219fb448361b2c6fdea1ad, type: 3}
       propertyPath: totalPlayersPerTeam

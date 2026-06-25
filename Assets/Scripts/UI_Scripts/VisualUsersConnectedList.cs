@@ -3,9 +3,12 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
+// Muestra la lista de jugadores conectados en el lobby, separados por equipo.
+// Se actualiza cada vez que ConnectedUserListManager recibe cambios de la red.
+
 public class VisualUsersConnectedList : MonoBehaviour
 {
-    [Header("Configuración de Equipos")]
+    [Header("Configuracion de Equipos")]
     public TMP_Text teamBlueText;
     public TMP_Text teamPinkText;
 
@@ -36,15 +39,14 @@ public class VisualUsersConnectedList : MonoBehaviour
         System.Text.StringBuilder blueBuilder = new System.Text.StringBuilder();
         System.Text.StringBuilder pinkBuilder = new System.Text.StringBuilder();
 
-        // Creamos el tag dinámicamente usando el nombre del asset y del sprite
+        // Generamos el tag de la corona usando el nombre del SpriteAsset asignado en el inspector
         string crownTag = "";
         if (crownSpriteAsset != null)
-        {
             crownTag = $"<sprite=\"{crownSpriteAsset.name}\" name=\"{spriteName}\"> ";
-        }
 
         foreach (var user in usersConnected)
         {
+            // El host siempre tiene userId == 0 en Netcode, le ponemos la corona delante del nombre
             bool isHost = (user.userId == 0);
             string line = (isHost ? crownTag : "") + user.userConnectedName + "\n";
 

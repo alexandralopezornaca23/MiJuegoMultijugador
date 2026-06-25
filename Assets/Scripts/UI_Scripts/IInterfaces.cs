@@ -1,8 +1,10 @@
 using UnityEngine;
 
+// Interfaces preparadas para una posible expansion del proyecto con sistemas de dano y curacion.
+// Actualmente no se usan en el prototipo pero estan definidas para futuras implementaciones.
+
 public interface IInterfaces
 {
-    //int Health { get; set; }
     void Interface(int interfaz);
 }
 

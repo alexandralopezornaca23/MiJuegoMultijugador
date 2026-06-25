@@ -2,6 +2,9 @@ using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 
+// Script del menu principal. Gestiona el nombre del jugador, la conexion como host o cliente
+// y los botones de la interfaz del menu.
+
 public class MainMenuManager : MonoBehaviour
 {
     [Header("Main Menu UI")]
@@ -12,10 +15,10 @@ public class MainMenuManager : MonoBehaviour
 
     private void Start()
     {
-        // Por defecto: pantalla reducida (windowed)
-        // El jugador decide si pone pantalla completa desde opciones
         Screen.fullScreen = false;
 
+        // Si el jugador ya tiene un nombre guardado lo mostramos y bloqueamos el campo
+        // para que no tenga que escribirlo cada vez que abre el juego
         string savedName = PlayerPrefs.GetString("PlayerName", "");
         if (!string.IsNullOrEmpty(savedName))
         {
@@ -30,6 +33,7 @@ public class MainMenuManager : MonoBehaviour
             optionsManager = FindFirstObjectByType<OptionsManager>();
     }
 
+    // Si el campo esta vacio genera un nombre de invitado aleatorio para no entrar sin identificacion
     private string GetValidPlayerName()
     {
         string name = playerNameInput.text.Trim();

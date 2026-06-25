@@ -3,9 +3,12 @@ using Unity.Netcode;
 using UnityEngine;
 using TMPro;
 
+// Contenedor del segundo juego. Detecta cuando los objetos del equipo correcto entran en su zona,
+// actualiza el contador de entregas y destruye la barrera cuando se completan todas.
+
 public class TeamContainer : NetworkBehaviour
 {
-    [Header("Configuración de Equipo")]
+    [Header("Configuracion de Equipo")]
     public int myTeam = 1;
     public string teamName;
 
@@ -18,8 +21,11 @@ public class TeamContainer : NetworkBehaviour
     [Header("Meta")]
     public GameObject objectToDestroy;
 
+    // NetworkVariables para que el contador sea visible y actualizado en todos los clientes
     private NetworkVariable<int> totalToDeliver = new NetworkVariable<int>(0);
     private NetworkVariable<int> currentDelivered = new NetworkVariable<int>(0);
+
+    // HashSet para rastrear que objetos faltan por entregar sin contar duplicados
     private HashSet<int> requiredInstanceIds = new HashSet<int>();
 
     public override void OnNetworkSpawn()
@@ -55,6 +61,7 @@ public class TeamContainer : NetworkBehaviour
             if (other.TryGetComponent<NetworkObject>(out var masterNet))
             {
                 currentDelivered.Value = totalToDeliver.Value;
+                ReleaseFromCarrier(masterNet);
                 DespawnAndHide(masterNet);
                 CheckIfAllDelivered();
                 return;
@@ -68,10 +75,40 @@ public class TeamContainer : NetworkBehaviour
             {
                 requiredInstanceIds.Remove(instanceId);
                 currentDelivered.Value++;
+                ReleaseFromCarrier(netObj);
                 DespawnAndHide(netObj);
                 CheckIfAllDelivered();
             }
         }
+    }
+
+    // Antes de hacer Despawn del objeto, buscamos si algun jugador lo lleva en la mano
+    // y le forzamos a soltarlo para que no quede bloqueado sin poder recoger mas objetos.
+    // No usamos el OwnerClientId del objeto porque cuando llega al trigger ya puede haber
+    // vuelto al servidor. En su lugar preguntamos a cada PickupObject si lleva este objeto
+    // a traves de IsCarrying(), que usa el registro interno del servidor. (por esto causaba errores)
+    private void ReleaseFromCarrier(NetworkObject itemNetObj)
+    {
+        if (!IsServer) return;
+
+        var pikeable = itemNetObj.GetComponent<PikeableObject>();
+        if (pikeable == null || !pikeable.isHeld.Value) return;
+
+        ulong itemId = itemNetObj.NetworkObjectId;
+
+        foreach (var kvp in NetworkManager.Singleton.SpawnManager.SpawnedObjects)
+        {
+            var pickup = kvp.Value.GetComponent<PickupObject>();
+            if (pickup == null) continue;
+
+            if (!pickup.IsCarrying(itemId)) continue;
+
+            pickup.ForceDropOnPush();
+            return;
+        }
+
+        // Si no se encuentra portador pero el objeto figura como llevado, lo limpiamos directamente
+        pikeable.isHeld.Value = false;
     }
 
     private void OnCounterChanged(int previousValue, int newValue) => UpdateUI(newValue, totalToDeliver.Value);
@@ -81,7 +118,7 @@ public class TeamContainer : NetworkBehaviour
         if (statusText != null)
         {
             int restantes = total - delivered;
-            statusText.text = restantes > 0 ? $"{teamName}: {restantes}" : "¡Puerta del equipo " + teamName + " abierta!";
+            statusText.text = restantes > 0 ? $"{teamName}: {restantes}" : "Puerta del equipo " + teamName + " abierta!";
             statusText.color = restantes > 0 ? Color.white : Color.yellow;
         }
     }
@@ -101,30 +138,30 @@ public class TeamContainer : NetworkBehaviour
         }
     }
 
+    // Avisamos a todos los clientes para que oculten el objeto antes de eliminarlo de la red
     private void DespawnAndHide(NetworkObject netObj)
     {
         if (netObj == null || !netObj.IsSpawned) return;
 
         HideObjectClientRpc(netObj.NetworkObjectId);
-
         netObj.gameObject.SetActive(false);
-        netObj.Despawn(false); 
+        netObj.Despawn(false);
     }
 
     [ClientRpc]
     private void HideObjectClientRpc(ulong targetNetworkObjectId)
     {
         if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out var netObj))
-        {
             netObj.gameObject.SetActive(false);
-        }
     }
 
+    // Hacemos que el texto del contador mire siempre hacia la camara del jugador
     private void LateUpdate()
     {
         if (statusText != null && Camera.main != null)
         {
-            statusText.canvas.transform.LookAt(statusText.canvas.transform.position + Camera.main.transform.rotation * Vector3.forward,
+            statusText.canvas.transform.LookAt(
+                statusText.canvas.transform.position + Camera.main.transform.rotation * Vector3.forward,
                 Camera.main.transform.rotation * Vector3.up);
         }
     }

@@ -4,6 +4,10 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+// Script que gestiona los mensajes de feedback visual al jugador y las transiciones de escena
+// provocadas por eventos de red (conectarse, desconectarse, cambiar de escena).
+// Tambien controla el mensaje de "Esperando jugadores..." en el lobby cuando el host esta solo.
+
 public class ConnectionCallbackManager : MonoBehaviour
 {
     private static ConnectionCallbackManager singleton;
@@ -26,11 +30,10 @@ public class ConnectionCallbackManager : MonoBehaviour
     public float displayTime = 2f;
     public float fadeTime = 0.75f;
 
+    // CanvasGroup del texto de informacion, usado para hacer el fade in/out del feedback
     private CanvasGroup infoCanvasGroup;
     private Coroutine currentFeedbackCoroutine;
     private Coroutine waitingBlinkCoroutine;
-
-
 
     private string currentSceneName;
 
@@ -49,6 +52,7 @@ public class ConnectionCallbackManager : MonoBehaviour
 
         SceneManager.sceneLoaded += OnSceneLoaded;
 
+        // Buscamos o creamos el CanvasGroup del texto de feedback para poder controlar su opacidad
         if (informationText != null)
         {
             Transform parent = informationText.transform.parent;
@@ -74,6 +78,7 @@ public class ConnectionCallbackManager : MonoBehaviour
     {
         UpdateUIForCurrentScene();
 
+        // Nos suscribimos a los eventos de red para reaccionar automaticamente
         NetworkManager.Singleton.OnClientStarted += OnClientStartedMethod;
         NetworkManager.Singleton.OnClientStopped += OnClientStoppedMethod;
         NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnectedMethod;
@@ -91,26 +96,17 @@ public class ConnectionCallbackManager : MonoBehaviour
 
     private void Update()
     {
-        // Solo en Lobby y solo si somos host
+        // Solo el host en el lobby necesita comprobar si esta solo para mostrar el mensaje de espera
         if (currentSceneName != "Lobby" || !NetworkManager.Singleton?.IsServer == true)
             return;
 
-        // Comprobación segura: si NetworkManager desaparece, salimos
         if (NetworkManager.Singleton == null)
             return;
 
-        // Comprobamos si hay clientes conectados
         int clientCount = NetworkManager.Singleton.ConnectedClients.Count;
         bool isAlone = clientCount <= 1;
 
-        if (isAlone)
-        {
-            ShowWaitingPlayers(true);
-        }
-        else
-        {
-            ShowWaitingPlayers(false);
-        }
+        ShowWaitingPlayers(isAlone);
     }
 
     private void ShowWaitingPlayers(bool show)
@@ -123,14 +119,12 @@ public class ConnectionCallbackManager : MonoBehaviour
             waitingText.text = "Esperando jugadores...";
             waitingCanvasGroup.alpha = 0f;
 
+            // Solo arrancamos la corrutina si no esta ya en marcha
             if (waitingBlinkCoroutine == null)
-            {
                 waitingBlinkCoroutine = StartCoroutine(BlinkWaitingText());
-            }
         }
         else
         {
-            // Ocultar y parar todo
             if (waitingBlinkCoroutine != null)
             {
                 StopCoroutine(waitingBlinkCoroutine);
@@ -140,11 +134,12 @@ public class ConnectionCallbackManager : MonoBehaviour
         }
     }
 
+    // Corrutina que hace parpadear el texto de espera de forma suave e indefinida
+    // hasta que se para desde ShowWaitingPlayers
     private IEnumerator BlinkWaitingText()
     {
         while (true)
         {
-            // Fade In: de 0 a 1 (suave)
             float timer = 0f;
             while (timer < fadeInDuration)
             {
@@ -154,10 +149,8 @@ public class ConnectionCallbackManager : MonoBehaviour
             }
             waitingCanvasGroup.alpha = 1f;
 
-            // Mantener visible
             yield return new WaitForSecondsRealtime(holdVisibleTime);
 
-            // Fade Out: de 1 a 0 (suave)
             timer = 0f;
             while (timer < fadeOutDuration)
             {
@@ -167,7 +160,6 @@ public class ConnectionCallbackManager : MonoBehaviour
             }
             waitingCanvasGroup.alpha = 0f;
 
-            // Pequeña pausa completamente apagado antes de repetir
             yield return new WaitForSecondsRealtime(holdInvisibleTime);
         }
     }
@@ -177,6 +169,7 @@ public class ConnectionCallbackManager : MonoBehaviour
         currentSceneName = scene.name;
         UpdateUIForCurrentScene();
 
+        // Al cambiar de escena paramos el parpadeo y ocultamos el mensaje de espera
         if (waitingBlinkCoroutine != null)
         {
             StopCoroutine(waitingBlinkCoroutine);
@@ -186,36 +179,37 @@ public class ConnectionCallbackManager : MonoBehaviour
             waitingCanvasGroup.alpha = 0f;
     }
 
+    // Oculta el codigo de sala si estamos en el menu principal
     private void UpdateUIForCurrentScene()
     {
         bool isInMainMenu = currentSceneName == "MainMenu";
 
         if (LobbyCodeManager.Singleton != null)
-        {
             LobbyCodeManager.Singleton.SetCodeVisibility(!isInMainMenu);
-        }
     }
 
     private void ShowTemporaryFeedback(string message)
     {
         if (informationText == null || infoCanvasGroup == null) return;
 
+        // Si habia un mensaje mostrando, lo cancelamos y mostramos el nuevo
         if (currentFeedbackCoroutine != null)
             StopCoroutine(currentFeedbackCoroutine);
 
         currentFeedbackCoroutine = StartCoroutine(TemporaryFeedbackCoroutine(message));
     }
 
+    // Metodo publico para que otros scripts muestren mensajes de feedback sin necesitar referencias directas
     public void ShowFeedback(string message)
     {
         ShowTemporaryFeedback(message);
     }
 
+    // Muestra el mensaje con fade in, lo mantiene visible unos segundos y lo hace desaparecer con fade out
     private IEnumerator TemporaryFeedbackCoroutine(string message)
     {
         informationText.text = message;
 
-        // Fade In
         float timer = 0f;
         while (timer < fadeTime)
         {
@@ -225,10 +219,8 @@ public class ConnectionCallbackManager : MonoBehaviour
         }
         infoCanvasGroup.alpha = 1f;
 
-        // Tiempo visible
         yield return new WaitForSecondsRealtime(displayTime);
 
-        // Fade Out
         timer = 0f;
         while (timer < fadeTime)
         {
@@ -241,16 +233,15 @@ public class ConnectionCallbackManager : MonoBehaviour
         currentFeedbackCoroutine = null;
     }
 
-    private void OnClientDisconnectedMethod(ulong obj)
-    {
-        // Lógica adicional si la necesitas
-    }
+    private void OnClientDisconnectedMethod(ulong obj) { }
 
     private void LoadMainMenuBecauseDesconnect(bool obj)
     {
         SceneManager.LoadScene("MainMenu");
     }
 
+    // Solo el host carga el Lobby cuando el cliente conectado es el mismo host
+    // Esto evita que se cargue la escena varias veces al conectarse otros clientes
     private void LoadLobbyBecauseConnected(ulong userConnectedID)
     {
         if (NetworkManager.Singleton.IsServer && userConnectedID == NetworkManager.Singleton.LocalClientId)

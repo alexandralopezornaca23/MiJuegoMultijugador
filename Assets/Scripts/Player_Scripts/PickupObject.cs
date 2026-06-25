@@ -1,16 +1,20 @@
 ﻿using Unity.Netcode;
 using UnityEngine;
 
+// Script que gestiona la recogida y soltado de objetos del segundo juego.
+// Cuando un jugador recoge un objeto, el servidor le transfiere la propiedad para que
+// pueda moverlo sin retardo. Al soltarlo, la propiedad vuelve al servidor.
+
 public class PickupObject : NetworkBehaviour
 {
     [SerializeField] private Transform handPoint;
-    public NetworkObject heldObject;
+    public NetworkObject heldObject; // Objeto que lleva el jugador en la mano (solo valido en el cliente propietario)
 
-    // NUEVO: el servidor siempre sabe qué objeto sostiene este jugador,
-    // sin depender de "heldObject" (que solo está sincronizado en el cliente propietario)
+    // Registro en el servidor del objeto que lleva este jugador.
+    // A diferencia de heldObject, este valor es fiable en el servidor aunque el ownership haya cambiado.
     private ulong heldObjectIdServer;
 
-    [Header("Configuración")]
+    [Header("Configuracion")]
     [SerializeField] private float pickupRange = 3f;
     [SerializeField] private LayerMask pickupLayer;
     [SerializeField] private KeyCode pickupKey = KeyCode.E;
@@ -20,6 +24,7 @@ public class PickupObject : NetworkBehaviour
     {
         if (!IsOwner) return;
 
+        // Movemos el objeto con el Rigidbody para mantener la sincronizacion con el motor de fisicas
         if (heldObject != null)
         {
             if (heldObject.TryGetComponent<Rigidbody>(out var rb))
@@ -42,9 +47,7 @@ public class PickupObject : NetworkBehaviour
         }
 
         if (Input.GetKeyDown(pickupKey))
-        {
             TryPickup();
-        }
     }
 
     private void TryPickup()
@@ -54,6 +57,7 @@ public class PickupObject : NetworkBehaviour
         Collider[] hits = Physics.OverlapSphere(transform.position, pickupRange, pickupLayer);
         if (hits.Length == 0) return;
 
+        // Buscamos el objeto recogible mas cercano dentro del rango
         Collider closest = null;
         float minDist = float.MaxValue;
 
@@ -71,6 +75,7 @@ public class PickupObject : NetworkBehaviour
         var netObj = closest.GetComponent<NetworkObject>();
         if (netObj == null || !netObj.IsSpawned) return;
 
+        // Comprobamos en cliente que el objeto no este ya entregado o llevado antes de enviar el RPC
         var pikeable = netObj.GetComponent<PikeableObject>();
         if (pikeable != null && (pikeable.isDelivered.Value || pikeable.isHeld.Value)) return;
 
@@ -84,11 +89,13 @@ public class PickupObject : NetworkBehaviour
         var pickupItem = targetNetObj.GetComponent<PikeableObject>();
         if (pickupItem == null) return;
 
+        // Validacion final en el servidor para evitar que dos jugadores recojan el mismo objeto a la vez
         if (pickupItem.isDelivered.Value || pickupItem.isHeld.Value) return;
 
         ulong requesterId = rpcParams.Receive.SenderClientId;
         int requesterTeam = GetTeamForClient(requesterId);
 
+        // Si el objeto pertenece a un equipo concreto y el jugador no es de ese equipo, lo rechazamos
         if (pickupItem.allowedTeam != 0 && pickupItem.allowedTeam != requesterTeam)
         {
             string teamName = pickupItem.allowedTeam == 1 ? "rosa" : "azul";
@@ -98,7 +105,7 @@ public class PickupObject : NetworkBehaviour
         }
 
         pickupItem.isHeld.Value = true;
-        heldObjectIdServer = itemNetId; // NUEVO: el servidor recuerda qué objeto sostiene este jugador
+        heldObjectIdServer = itemNetId; // Registramos en el servidor que este jugador lleva este objeto
 
         if (targetNetObj.TryGetComponent<Rigidbody>(out var rb))
         {
@@ -109,6 +116,7 @@ public class PickupObject : NetworkBehaviour
             rb.constraints = RigidbodyConstraints.FreezeRotation;
         }
 
+        // Transferimos la propiedad al cliente para que pueda mover el objeto sin retardo
         targetNetObj.ChangeOwnership(requesterId);
         SetItemStateClientRpc(itemNetId, true);
 
@@ -120,9 +128,7 @@ public class PickupObject : NetworkBehaviour
     private void AssignHeldObjectClientRpc(ulong itemNetId, ClientRpcParams clientRpcParams = default)
     {
         if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(itemNetId, out var target))
-        {
             heldObject = target;
-        }
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -136,8 +142,6 @@ public class PickupObject : NetworkBehaviour
         ServerDropItem(netObj, dropPosition, dropRotation);
     }
 
-    // NUEVO: lógica común de "soltar", usada tanto por el drop manual (tecla R)
-    // como por el drop forzado al recibir un empujón.
     private void ServerDropItem(NetworkObject netObj, Vector3 dropPosition, Quaternion dropRotation)
     {
         netObj.transform.SetPositionAndRotation(dropPosition, dropRotation);
@@ -152,10 +156,11 @@ public class PickupObject : NetworkBehaviour
             rb.AddForce(transform.forward * 3f + Vector3.up * 2f, ForceMode.Impulse);
         }
 
+        // Devolvemos la propiedad al servidor y limpiamos el estado del objeto
         netObj.ChangeOwnership(NetworkManager.ServerClientId);
         if (netObj.TryGetComponent<PikeableObject>(out var p)) p.isHeld.Value = false;
 
-        heldObjectIdServer = 0; // NUEVO: limpiar el registro server-side
+        heldObjectIdServer = 0;
         SetItemStateClientRpc(netObj.NetworkObjectId, false);
         UnassignHeldObjectClientRpc();
     }
@@ -172,10 +177,7 @@ public class PickupObject : NetworkBehaviour
         if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(itemNetId, out var netObj)) return;
 
         if (netObj.TryGetComponent<Rigidbody>(out var rb))
-        {
-            if (isPickedUp) rb.useGravity = false;
-            else rb.useGravity = true;
-        }
+            rb.useGravity = !isPickedUp;
     }
 
     [ClientRpc]
@@ -184,12 +186,18 @@ public class PickupObject : NetworkBehaviour
         ConnectionCallbackManager.Singleton?.ShowFeedback(message);
     }
 
-    // MODIFICADO: ya no depende de "heldObject" (solo válido en el cliente propietario),
-    // sino del registro server-side "heldObjectIdServer".
+    // Permite que TeamContainer pregunte si este jugador lleva un objeto concreto.
+    // Usa heldObjectIdServer en lugar del ownership porque cuando el objeto llega al trigger
+    // su propiedad ya puede haber vuelto al servidor.
+    public bool IsCarrying(ulong networkObjectId)
+    {
+        return heldObjectIdServer == networkObjectId;
+    }
+
+    // Fuerza al jugador a soltar el objeto que lleva, usado por TeamContainer y PlayerPush
     public void ForceDropOnPush()
     {
         if (!IsServer) return;
-
         if (heldObjectIdServer == 0) return;
 
         if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(heldObjectIdServer, out var netObj)) return;

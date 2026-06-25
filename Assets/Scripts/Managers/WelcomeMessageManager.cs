@@ -1,6 +1,9 @@
 using TMPro;
 using UnityEngine;
 
+// Script que muestra un mensaje de bienvenida en el menu principal.
+// Si el jugador ya tiene nombre guardado muestra "Hola de nuevo", si no, le pide que se identifique.
+
 public class WelcomeMessageManager : MonoBehaviour
 {
     [Header("UI")]
@@ -17,10 +20,10 @@ public class WelcomeMessageManager : MonoBehaviour
 
     private void OnEnable()
     {
+        // Actualizamos tambien en OnEnable para que el mensaje sea correcto
+        // si el jugador cambia el nombre desde opciones y vuelve al menu
         if (OnlinePlayersManager.Singleton != null)
-        {
             UpdateWelcomeMessage();
-        }
     }
 
     public void UpdateWelcomeMessage()
@@ -29,13 +32,6 @@ public class WelcomeMessageManager : MonoBehaviour
 
         string savedName = PlayerPrefs.GetString("PlayerName", "");
 
-        if (string.IsNullOrEmpty(savedName))
-        {
-            welcomeText.text = "¿Cómo te llamas?";
-        }
-        else
-        {
-            welcomeText.text = "¡Hola de nuevo!";
-        }
+        welcomeText.text = string.IsNullOrEmpty(savedName) ? "Como te llamas?" : "Hola de nuevo!";
     }
 }

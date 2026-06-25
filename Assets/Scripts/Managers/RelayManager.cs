@@ -8,6 +8,10 @@ using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
 
+// Script que gestiona la conexion a traves de Unity Relay.
+// Permite crear una sala como host o unirse a una existente mediante codigo.
+// Las salas admiten hasta 9 conexiones adicionales al host (10 jugadores en total).
+
 public class RelayManager : MonoBehaviour
 {
     public TMP_InputField input_roomCodeToJoin;
@@ -17,14 +21,12 @@ public class RelayManager : MonoBehaviour
 
     private async void Start()
     {
+        // Inicializamos Unity Services y autenticacion anonima antes de cualquier conexion
         if (UnityServices.State != ServicesInitializationState.Initialized)
-        {
             await UnityServices.InitializeAsync();
-        }
+
         if (!AuthenticationService.Instance.IsSignedIn)
-        {
             await AuthenticationService.Instance.SignInAnonymouslyAsync();
-        }
 
         string savedName = PlayerPrefs.GetString("PlayerName", "");
 
@@ -46,13 +48,12 @@ public class RelayManager : MonoBehaviour
         WelcomeMessageManager welcome = FindFirstObjectByType<WelcomeMessageManager>();
         welcome?.UpdateWelcomeMessage();
 
+        // Limitamos el input a MAX_NAME_LENGTH caracteres y recortamos si se supera
         playerNameInput.characterLimit = MAX_NAME_LENGTH;
         playerNameInput.onValueChanged.AddListener(text =>
         {
             if (text.Length > MAX_NAME_LENGTH)
-            {
                 playerNameInput.text = text.Substring(0, MAX_NAME_LENGTH);
-            }
         });
     }
 
@@ -62,7 +63,6 @@ public class RelayManager : MonoBehaviour
 
         if (name.Length > MAX_NAME_LENGTH)
         {
-            // No dejar crear sala si el nombre supera MAX_NAME_LENGTH
             var feedback = FindFirstObjectByType<ConnectionCallbackManager>();
             feedback?.ShowFeedback($"El nombre no puede superar los {MAX_NAME_LENGTH} caracteres.");
             return;
@@ -83,7 +83,7 @@ public class RelayManager : MonoBehaviour
         }
         else
         {
-            LobbyCodeManager.Singleton.lobbyCode.text = "ERROR CON EL CÓDIGO DE SALA";
+            LobbyCodeManager.Singleton.lobbyCode.text = "ERROR CON EL CODIGO DE SALA";
         }
     }
 
@@ -104,9 +104,7 @@ public class RelayManager : MonoBehaviour
 
         bool joined = await JoinRelayRoom(roomCode);
         if (joined)
-        {
             ChatHistoryManager.Instance?.InitializeForRoom(roomCode);
-        }
     }
 
     private string GetValidPlayerName()
@@ -120,14 +118,14 @@ public class RelayManager : MonoBehaviour
         }
 
         if (name.Length > MAX_NAME_LENGTH)
-        {
             name = name.Substring(0, MAX_NAME_LENGTH);
-        }
 
         return name;
     }
 
-    private async Task<string> CreateRelayRoom(int maxConnections = 4)
+    // Solicita una Allocation a Unity Relay, configura el transporte con DTLS
+    // y arranca el NetworkManager como host. Devuelve el codigo de sala o null si falla.
+    private async Task<string> CreateRelayRoom(int maxConnections = 9)
     {
         try
         {
@@ -147,6 +145,8 @@ public class RelayManager : MonoBehaviour
         return null;
     }
 
+    // Busca la sala con el codigo introducido en los servidores de Unity
+    // y conecta al cliente a traves del Relay
     private async Task<bool> JoinRelayRoom(string roomCode)
     {
         try

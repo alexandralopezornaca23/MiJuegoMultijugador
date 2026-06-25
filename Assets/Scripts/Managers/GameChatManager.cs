@@ -6,6 +6,10 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
+// Chat en partida inspirado en Valorant. Permite enviar mensajes al equipo o a todos.
+// El panel aparece al recibir mensajes y desaparece solo despues de unos segundos.
+// Al abrir el chat se bloquea el movimiento y la camara del jugador local.
+
 public class GameChatManager : NetworkBehaviour
 {
     public static GameChatManager Singleton { get; private set; }
@@ -17,7 +21,7 @@ public class GameChatManager : NetworkBehaviour
     [SerializeField] private TMP_Text prefixText;
     [SerializeField] private ScrollRect scrollRect;
 
-    [Header("Configuración")]
+    [Header("Configuracion")]
     [SerializeField] private float messageFadeDelay = 5f;
     [SerializeField] private float fadeDuration = 1f;
 
@@ -26,7 +30,7 @@ public class GameChatManager : NetworkBehaviour
     [SerializeField] private Color teamAzulColor = new Color(0.3f, 0.7f, 1f);
 
     private bool isChatOpen = false;
-    private bool isAllMode = false;
+    private bool isAllMode = false;  // true cuando el jugador ha escrito /all para enviar a todos
     private float fadeTimer = 0f;
     private bool isFading = false;
     private CanvasGroup chatCanvasGroup;
@@ -36,6 +40,7 @@ public class GameChatManager : NetworkBehaviour
     private ThirdPersonController localController;
     private CameraController localCameraController;
 
+    // Propiedad publica para que otros scripts (como PlayerPush) puedan saber si el chat esta abierto
     public bool IsChatOpen => isChatOpen;
 
     private void Awake()
@@ -66,6 +71,7 @@ public class GameChatManager : NetworkBehaviour
 
     private void Update()
     {
+        // Si el menu de pausa esta abierto, el chat no procesa ninguna entrada
         if (PauseMenuManager.Singleton != null && IsPauseOpen()) return;
 
         if (Keyboard.current.enterKey.wasPressedThisFrame ||
@@ -79,6 +85,7 @@ public class GameChatManager : NetworkBehaviour
 
         if (isChatOpen && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
+            // Si estamos en modo todos, Escape vuelve al modo equipo en lugar de cerrar el chat
             if (isAllMode)
             {
                 isAllMode = false;
@@ -94,6 +101,7 @@ public class GameChatManager : NetworkBehaviour
             }
         }
 
+        // Scroll manual con la rueda del raton mientras el chat esta abierto
         if (isChatOpen && scrollRect != null)
         {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
@@ -104,6 +112,7 @@ public class GameChatManager : NetworkBehaviour
             }
         }
 
+        // Logica del fade automatico del panel cuando el chat esta cerrado pero hay mensajes
         if (!isChatOpen && chatPanel.activeSelf && messageLines.Count > 0)
         {
             if (!isFading)
@@ -128,6 +137,8 @@ public class GameChatManager : NetworkBehaviour
         }
     }
 
+    // Detecta en tiempo real si el jugador escribe /all para cambiar al modo de mensaje global
+    // Cuando lo detecta elimina el comando del input y cambia el prefijo a amarillo
     private void OnInputValueChanged(string text)
     {
         if (prefixText == null) return;
@@ -137,6 +148,7 @@ public class GameChatManager : NetworkBehaviour
         {
             isAllMode = true;
 
+            // Quitamos el listener temporalmente para poder cambiar el texto sin que se dispare otra vez
             chatInput.onValueChanged.RemoveListener(OnInputValueChanged);
             string remaining = text.Length > 4 ? text.Substring(4).TrimStart() : "";
             chatInput.text = remaining;
@@ -157,6 +169,7 @@ public class GameChatManager : NetworkBehaviour
     {
         string text = chatInput.text.Trim();
 
+        // Si el campo esta vacio al pulsar Enter, simplemente cerramos el chat
         if (string.IsNullOrEmpty(text))
         {
             CloseChat();
@@ -168,6 +181,7 @@ public class GameChatManager : NetworkBehaviour
 
         SendGameMessageServerRpc(text, playerName, senderTeam, isAllMode);
 
+        // Quitamos el listener, limpiamos el input y lo volvemos a conectar
         chatInput.onValueChanged.RemoveListener(OnInputValueChanged);
         chatInput.text = "";
         chatInput.onValueChanged.AddListener(OnInputValueChanged);
@@ -187,6 +201,7 @@ public class GameChatManager : NetworkBehaviour
     {
         FindLocalComponents();
 
+        // Bloqueamos el movimiento y la camara del jugador local mientras el chat esta abierto
         if (localController != null) localController.inputBlocked = true;
         if (localCameraController != null) localCameraController.enabled = false;
 
@@ -216,6 +231,7 @@ public class GameChatManager : NetworkBehaviour
         StartCoroutine(FocusInputNextFrame());
     }
 
+    // Esperamos un frame antes de activar el input para evitar que Unity ignore el foco
     private System.Collections.IEnumerator FocusInputNextFrame()
     {
         yield return null;
@@ -241,9 +257,11 @@ public class GameChatManager : NetworkBehaviour
         if (prefixText != null)
             prefixText.gameObject.SetActive(false);
 
+        // Devolvemos el control del movimiento y la camara al jugador
         if (localController != null) localController.inputBlocked = false;
         if (localCameraController != null) localCameraController.enabled = true;
 
+        // Si hay mensajes, dejamos el panel visible con fade antes de ocultarlo
         if (messageLines.Count > 0)
         {
             chatPanel.SetActive(true);
@@ -265,10 +283,13 @@ public class GameChatManager : NetworkBehaviour
     {
         if (isAllChat)
         {
+            // Mensaje global: llega a todos los clientes sin filtro
             ReceiveGameMessageClientRpc(message, playerName, senderTeam, true);
         }
         else
         {
+            // Mensaje de equipo: filtramos los IDs de los clientes del mismo equipo
+            // y enviamos el ClientRpc solo a ellos usando TargetClientIds
             var teamClientIds = ConnectedUserListManager.Singleton.usersConnectedList
                 .Where(u => u.team == senderTeam)
                 .Select(u => u.userId)
@@ -292,27 +313,24 @@ public class GameChatManager : NetworkBehaviour
         ShowGameMessage(playerName, message, senderTeam, isAllChat);
     }
 
-    private void ShowGameMessage(string playerName, string message,
-    int senderTeam, bool isAllChat)
+    private void ShowGameMessage(string playerName, string message, int senderTeam, bool isAllChat)
     {
+        // El nombre del emisor se colorea segun su equipo
         string nameColorHex = ColorUtility.ToHtmlStringRGB(
             senderTeam == 1 ? teamRosaColor : teamAzulColor);
 
-        // el prefijo también usa el color del equipo
-        string prefixColorHex = nameColorHex;
-
         string channelPrefix = isAllChat
             ? "<color=#FFcc33>(Todos)</color> "
-            : $"<color=#{prefixColorHex}>(Equipo)</color> ";
+            : $"<color=#{nameColorHex}>(Equipo)</color> ";
 
-        string formatted =
-            $"{channelPrefix}<color=#{nameColorHex}>{playerName}</color>: {message}";
+        string formatted = $"{channelPrefix}<color=#{nameColorHex}>{playerName}</color>: {message}";
 
         messageLines.Add(formatted);
         chatLog.text = string.Join("\n", messageLines);
 
         StartCoroutine(ScrollToBottom());
 
+        // Si el chat esta cerrado cuando llega un mensaje, mostramos el panel brevemente
         if (!isChatOpen)
         {
             chatPanel.SetActive(true);
@@ -324,25 +342,20 @@ public class GameChatManager : NetworkBehaviour
         }
     }
 
+    // Recalcula el tamanio del contenedor del scroll y baja al ultimo mensaje
+    // Necesitamos esperar dos frames para que Unity actualice los tamanios del layout
     private System.Collections.IEnumerator ScrollToBottom()
     {
         yield return new WaitForEndOfFrame();
 
-        // Calculamos el tamaño del Content manualmente
-        // basándonos en el tamaño preferido del ChatLog
         RectTransform contentRect = scrollRect.content;
-        RectTransform chatLogRect = (RectTransform)chatLog.transform;
-
-        // Forzamos que el ChatLog recalcule su tamaño
         chatLog.ForceMeshUpdate();
 
-        // Ajustamos el Content al tamaño del ChatLog
         float preferredHeight = chatLog.preferredHeight;
         contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, preferredHeight);
 
         yield return new WaitForEndOfFrame();
 
-        // Scroll al fondo
         scrollRect.verticalNormalizedPosition = 0f;
     }
 
@@ -353,6 +366,8 @@ public class GameChatManager : NetworkBehaviour
                PauseMenuManager.Singleton.pauseCanvasGroup.alpha > 0f;
     }
 
+    // Busca el ThirdPersonController y CameraController que pertenecen al jugador local
+    // No cacheamos estas referencias en Start porque el jugador puede no existir aun en ese momento
     private void FindLocalComponents()
     {
         localController = null;
