@@ -1912,6 +1912,7 @@ MonoBehaviour:
   gravity: 23
   friction: 5
   myNetworkObject: {fileID: 0}
+  inputBlocked: 0
 --- !u!114 &7294427816933296204
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1960,9 +1961,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   jumpKey: 102
-  superJumpForceMultiplier: 10
-  superJumpTimeMultiplier: 1.5
-  jumpCooldown: 3
+  superJumpForceMultiplier: 6.5
+  superJumpTimeMultiplier: 0.3
+  jumpCooldown: 1
 --- !u!114 &8778811642214416884
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1977,7 +1978,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   range: 2
-  pushStrength: 15
+  pushStrengthEnemy: 15
+  pushStrengthTeam: 5
+  overlapRadius: 1.2
 --- !u!1 &4451391898063303402
 GameObject:
   m_ObjectHideFlags: 0
