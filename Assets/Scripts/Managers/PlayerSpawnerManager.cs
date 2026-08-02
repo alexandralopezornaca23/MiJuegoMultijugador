@@ -25,7 +25,31 @@ public class PlayerSpawnerManager : NetworkBehaviour
     [ServerRpc(RequireOwnership = false)]
     private void RequestSpawnServerRpc(ulong clientId)
     {
+        // Antes de crear el personaje nuevo, eliminamos cualquier personaje anterior
+        // de este mismo cliente que pudiera haber quedado de una partida previa.
+        // Esto lo hace el servidor con Despawn, que es la forma correcta en Netcode.
+        DespawnOldPlayerForClient(clientId);
+
         SpawnPlayer(clientId);
+    }
+
+    // Busca y elimina (desde el servidor) cualquier personaje que ya pertenezca a este cliente
+    private void DespawnOldPlayerForClient(ulong clientId)
+    {
+        if (!IsServer) return;
+
+        NetworkObject[] allNetObjs = Object.FindObjectsByType<NetworkObject>(FindObjectsSortMode.None);
+        foreach (var netObj in allNetObjs)
+        {
+            if (!netObj.IsSpawned) continue;
+            if (!netObj.CompareTag("NewNetworkPlayer")) continue;
+
+            // Si este personaje pertenece al cliente que esta entrando, lo despawneamos
+            if (netObj.OwnerClientId == clientId)
+            {
+                netObj.Despawn(true);
+            }
+        }
     }
 
     private void SpawnPlayer(ulong clientId)

@@ -8,8 +8,6 @@ using UnityEngine;
 // incluyendo su nombre, equipo y estado. Casi todos los demas scripts lo consultan
 // para saber a que equipo pertenece cada jugador.
 
-// Clase que representa los datos de un jugador conectado.
-// Implementa INetworkSerializable para poder enviarse directamente por la red como un objeto completo.
 [Serializable]
 public class ConnectedUserListData : INetworkSerializable
 {
@@ -24,7 +22,6 @@ public class ConnectedUserListData : INetworkSerializable
         team = 0;
     }
 
-    // Metodo obligatorio de INetworkSerializable: define que campos se envian por la red
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
     {
         serializer.SerializeValue(ref userConnectedName);
@@ -53,11 +50,9 @@ public class ConnectedUserListManager : NetworkBehaviour
         }
     }
 
-    // Lista de todos los jugadores conectados, accesible publicamente para que otros scripts la consulten
     public List<ConnectedUserListData> usersConnectedList;
 
     // Diccionario que vincula cada clientId con el controlador fisico de su personaje en escena.
-    // Necesario para poder teletransportar jugadores por equipo desde el servidor.
     private Dictionary<ulong, ThirdPersonController> players = new Dictionary<ulong, ThirdPersonController>();
 
     private void Start()
@@ -83,16 +78,17 @@ public class ConnectedUserListManager : NetworkBehaviour
     private void OnClientStopped(bool wasHost)
     {
         usersConnectedList.Clear();
+        players.Clear(); // Limpiamos tambien las referencias de personajes al parar el cliente
         UpdateVisualUserList();
     }
 
     private void OnServerStopped(bool wasHost)
     {
         usersConnectedList.Clear();
+        players.Clear();
         UpdateVisualUserList();
     }
 
-    // Cuando un jugador se desconecta, el servidor lo elimina de la lista y avisa a todos los clientes
     private void MethodRemoveUserFromList(ulong disconnectedUserId)
     {
         if (IsServer)
@@ -103,7 +99,6 @@ public class ConnectedUserListManager : NetworkBehaviour
         }
     }
 
-    // Cuando el objeto de red aparece en escena, cada jugador registra sus datos en el servidor
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
@@ -128,8 +123,6 @@ public class ConnectedUserListManager : NetworkBehaviour
         {
             int countBeforeAdd = usersConnectedList.Count;
 
-            // El primer jugador en unirse (el host) va al equipo Azul.
-            // El resto se asignan de forma alternada para equilibrar los equipos automaticamente.
             if (countBeforeAdd == 0)
             {
                 newUserConnected.team = 2; // 2 = Azul, 1 = Rosa
@@ -147,7 +140,6 @@ public class ConnectedUserListManager : NetworkBehaviour
         }
     }
 
-    // El servidor envia la lista actualizada a todos los clientes para que todos tengan la misma informacion
     [ClientRpc]
     private void UpdateUsersConnectedListClientRPC(ConnectedUserListData[] newUsersConnectedList)
     {
@@ -155,8 +147,6 @@ public class ConnectedUserListManager : NetworkBehaviour
         UpdateVisualUserList();
     }
 
-    // El servidor actualiza el equipo del jugador que ha solicitado el cambio
-    // Usamos rpcParams para saber que cliente hizo la peticion sin que el cliente tenga que enviarlo
     [ServerRpc(RequireOwnership = false)]
     private void SetPlayerTeamServerRpc(int newTeam, ServerRpcParams rpcParams = default)
     {
@@ -178,7 +168,6 @@ public class ConnectedUserListManager : NetworkBehaviour
         }
     }
 
-    // Busca el componente visual del lobby y le pasa la lista actualizada para que la dibuje
     public void UpdateVisualUserList()
     {
         VisualUsersConnectedList userList = FindAnyObjectByType<VisualUsersConnectedList>();
@@ -205,10 +194,12 @@ public class ConnectedUserListManager : NetworkBehaviour
         TeleportTeam(teamId, position);
     }
 
-    // Registra el controlador de personaje de un jugador para poder teletransportarlo despues
+    // Registra el controlador de personaje de un jugador para poder teletransportarlo despues.
+    // Si ya existe una entrada para ese clientId (de una partida anterior), la sobreescribimos
+    // con el personaje nuevo en lugar de ignorarla.
     public void RegisterPlayer(ulong clientId, ThirdPersonController playerScript)
     {
-        if (playerScript != null && !players.ContainsKey(clientId))
+        if (playerScript != null)
         {
             players[clientId] = playerScript;
         }
@@ -219,17 +210,23 @@ public class ConnectedUserListManager : NetworkBehaviour
         players.Remove(clientId);
     }
 
-    // Teletransporta a todos los jugadores de un equipo a una posicion concreta
+    // Teletransporta a todos los jugadores de un equipo a una posicion concreta.
+    // Comprobamos que cada personaje siga existiendo y spawneado en la red antes de teletransportarlo,
+    // para evitar errores con personajes "fantasma" de partidas anteriores.
     public void TeleportTeam(int teamId, Vector3 destinationPosition)
     {
         if (!IsServer) return;
 
         foreach (var user in usersConnectedList)
         {
-            if (user.team == teamId && players.TryGetValue(user.userId, out var player))
-            {
-                player.TeleportClientRpc(destinationPosition);
-            }
+            if (user.team != teamId) continue;
+            if (!players.TryGetValue(user.userId, out var player)) continue;
+
+            // Si la referencia esta muerta (personaje destruido) o no esta spawneada, la saltamos
+            if (player == null) continue;
+            if (player.myNetworkObject == null || !player.myNetworkObject.IsSpawned) continue;
+
+            player.TeleportClientRpc(destinationPosition);
         }
     }
 
@@ -239,6 +236,9 @@ public class ConnectedUserListManager : NetworkBehaviour
 
         if (players.TryGetValue(clientId, out var player))
         {
+            if (player == null) return;
+            if (player.myNetworkObject == null || !player.myNetworkObject.IsSpawned) return;
+
             player.TeleportClientRpc(destinationPosition);
         }
     }

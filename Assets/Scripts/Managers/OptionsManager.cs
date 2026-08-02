@@ -86,7 +86,6 @@ public class OptionsManager : MonoBehaviour
 
     public void HideOptions()
     {
-        ApplyNameChange();
         if (optionsPanel != null)
             optionsPanel.SetActive(false);
     }

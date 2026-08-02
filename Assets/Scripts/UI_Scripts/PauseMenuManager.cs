@@ -19,6 +19,10 @@ public class PauseMenuManager : MonoBehaviour
     public Button disconnectButton;
     public Button backToLobbyButton;
 
+    [Header("Bloqueo del boton Volver al Lobby")]
+    [Tooltip("Texto opcional que se muestra a los clientes explicando que solo el host puede volver al lobby")]
+    public TMP_Text backToLobbyHostOnlyLabel;
+
     private bool isPaused = false;
 
     private ThirdPersonController localPlayerController;
@@ -81,6 +85,9 @@ public class PauseMenuManager : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+
+        // Cada vez que se abre el menu, ajustamos el boton de volver al lobby segun seamos host o cliente
+        UpdateBackToLobbyButton();
     }
 
     private void HidePauseMenu()
@@ -93,8 +100,31 @@ public class PauseMenuManager : MonoBehaviour
         Cursor.visible = false;
     }
 
+    // El boton de volver al lobby es visible para todos pero solo interactuable para el host.
+    // A los clientes les mostramos un texto explicando que solo el host puede usarlo.
+    private void UpdateBackToLobbyButton()
+    {
+        if (backToLobbyButton == null) return;
+
+        bool isHost = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
+
+        backToLobbyButton.interactable = isHost;
+
+        if (backToLobbyHostOnlyLabel != null)
+        {
+            if (isHost)
+            {
+                backToLobbyHostOnlyLabel.gameObject.SetActive(false);
+            }
+            else
+            {
+                backToLobbyHostOnlyLabel.gameObject.SetActive(true);
+                backToLobbyHostOnlyLabel.text = "Solo el Host puede volver al lobby";
+            }
+        }
+    }
+
     // Busca los componentes del jugador local para desactivarlos al pausar.
-    // Hace varias busquedas alternativas por si el componente esta en un objeto hijo del prefab.
     private void FindLocalPlayerComponents()
     {
         localPlayerController = null;
@@ -180,9 +210,9 @@ public class PauseMenuManager : MonoBehaviour
             return;
         }
 
+        // Solo el host puede volver al lobby. Si por lo que sea un cliente llega aqui, no hacemos nada.
         if (NetworkManager.Singleton.IsServer)
         {
-            // Solo el host puede volver al lobby llevando a todos los clientes con el
             if (isPaused)
             {
                 EnableLocalControls();
@@ -190,11 +220,6 @@ public class PauseMenuManager : MonoBehaviour
                 isPaused = false;
             }
             NetworkManager.Singleton.SceneManager.LoadScene("Lobby", LoadSceneMode.Single);
-        }
-        else
-        {
-            // Los clientes simplemente se desconectan
-            LeaveSession();
         }
     }
 
